@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cybertruck Wrap Studio</title>
+  <meta name="description" content="Create and export a custom Cybertruck wrap design.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Cybertruck Wrap Studio home"><span class="brand-mark">CT</span><span>Cybertruck <strong>Wrap Studio</strong></span></a>
+    <a class="header-link" href="https://github.com/austinwagent-a11y/custom-wraps" target="_blank" rel="noopener">View project <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main class="app-shell">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">CUSTOM DESIGNER</p>
+      <h1 id="page-title">Make it unmistakably yours.</h1>
+      <p class="hero-copy">Create a one-off Cybertruck look with colors, patterns, and your own artwork. Your design stays in this browser.</p>
+    </section>
+
+    <div class="workspace">
+      <section class="preview-card" aria-labelledby="preview-title">
+        <div class="card-toolbar">
+          <div><p class="eyebrow">LIVE PREVIEW</p><h2 id="preview-title">Your Cybertruck</h2></div>
+          <button class="button secondary" id="resetButton" type="button">Reset</button>
+        </div>
+        <div class="canvas-wrap"><canvas id="wrapCanvas" width="1600" height="900" aria-label="Live Cybertruck wrap preview"></canvas></div>
+        <div class="preview-footer"><span id="statusText" role="status">Ready to design</span><button class="button primary" id="downloadButton" type="button">Download PNG <span aria-hidden="true">↓</span></button></div>
+      </section>
+
+      <aside class="controls" aria-label="Wrap design controls">
+        <div class="control-section"><h2>Base color</h2><div class="color-row"><label class="swatch active"><input type="radio" name="color" value="#8c969b" checked><span style="--swatch:#8c969b"></span><b>Steel</b></label><label class="swatch"><input type="radio" name="color" value="#101317"><span style="--swatch:#101317"></span><b>Midnight</b></label><label class="swatch"><input type="radio" name="color" value="#f1eee8"><span style="--swatch:#f1eee8"></span><b>Ivory</b></label><label class="swatch"><input type="radio" name="color" value="#b63e31"><span style="--swatch:#b63e31"></span><b>Ember</b></label><label class="swatch"><input type="radio" name="color" value="#265b53"><span style="--swatch:#265b53"></span><b>Forest</b></label></div></div>
+        <div class="control-section"><div class="section-heading"><h2>Pattern</h2><button class="text-button" id="clearPattern" type="button">Clear</button></div><div class="pattern-grid" id="patternGrid"><button class="pattern active" data-pattern="none" type="button"><span>None</span></button><button class="pattern" data-pattern="grid" type="button"><span>Grid</span></button><button class="pattern" data-pattern="stripes" type="button"><span>Stripes</span></button><button class="pattern" data-pattern="sunset" type="button"><span>Sunset</span></button><button class="pattern" data-pattern="camo" type="button"><span>Camo</span></button><button class="pattern" data-pattern="waves" type="button"><span>Waves</span></button></div></div>
+        <div class="control-section"><h2>Upload artwork</h2><label class="upload-zone" for="artworkInput"><span class="upload-icon" aria-hidden="true">＋</span><span><strong>Drop an image here</strong><small>or browse · PNG, JPG, SVG</small></span></label><input id="artworkInput" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp"><div class="artwork-controls" id="artworkControls" hidden><button class="button secondary small" id="removeArtwork" type="button">Remove artwork</button><label>Opacity <output id="opacityOutput">70%</output><input id="opacityRange" type="range" min="0" max="100" value="70"></label></div></div>
+        <div class="control-section adjustments"><h2>Adjust artwork</h2><label>Scale <output id="scaleOutput">100%</output><input id="scaleRange" type="range" min="25" max="250" value="100"></label><label>Horizontal position <output id="xOutput">0</output><input id="xRange" type="range" min="-800" max="800" value="0"></label><label>Vertical position <output id="yOutput">0</output><input id="yRange" type="range" min="-450" max="450" value="0"></label><label>Rotation <output id="rotationOutput">0°</output><input id="rotationRange" type="range" min="-180" max="180" value="0"></label></div>
+      </aside>
+    </div>
+
+    <section class="gallery" aria-labelledby="gallery-title"><div class="section-heading"><div><p class="eyebrow">GET INSPIRED</p><h2 id="gallery-title">Community designs</h2></div><span class="gallery-note">Click a design to use it as artwork</span></div><div class="gallery-grid" id="galleryGrid"></div></section>
+  </main>
+  <footer><p>Cybertruck Wrap Studio · An open design tool for the <a href="https://github.com/austinwagent-a11y/custom-wraps" target="_blank" rel="noopener">custom-wraps</a> project.</p><p>Designs are previews only. Follow Tesla's official wrap requirements before production.</p></footer>
+  <script src="app.js"></script>
+</body>
+</html>
