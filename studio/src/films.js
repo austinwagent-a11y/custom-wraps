@@ -116,7 +116,10 @@ export const FILMS = [
     film: 'Tesla example',
     filmMultiplier: 1,
     trending: true,
-    official: '/official/Cosmic_Burst.png',
+    officialByVehicle: {
+      cybertruck: '/official/cybertruck/Cosmic_Burst.png',
+      model3: '/official/model3/Cosmic_Burst.png',
+    },
   },
   {
     id: 'digi',
@@ -131,7 +134,10 @@ export const FILMS = [
     pattern: 'camo',
     film: 'Tesla example',
     filmMultiplier: 1,
-    official: '/official/Digital_Camo_Stealth.png',
+    // Cybertruck-only Tesla example; Model 3 uses generated camo until a matching UV ships.
+    officialByVehicle: {
+      cybertruck: '/official/cybertruck/Digital_Camo_Stealth.png',
+    },
   },
   {
     id: 'camostealth',
@@ -146,7 +152,9 @@ export const FILMS = [
     pattern: 'camo',
     film: 'Tesla example',
     filmMultiplier: 1,
-    official: '/official/Camo_Stealth.png',
+    officialByVehicle: {
+      cybertruck: '/official/cybertruck/Camo_Stealth.png',
+    },
   },
   {
     id: 'gradblack',
@@ -160,7 +168,9 @@ export const FILMS = [
     roughness: 0.22,
     film: 'Tesla example',
     filmMultiplier: 1,
-    official: '/official/Gradient_Black.png',
+    officialByVehicle: {
+      cybertruck: '/official/cybertruck/Gradient_Black.png',
+    },
   },
   {
     id: 'void',
@@ -558,4 +568,19 @@ export const FINISHES = [
 
 export function getFilm(id) {
   return FILMS.find((f) => f.id === id) ?? FILMS.find((f) => f.id === 'khaki')
+}
+
+/** Vehicle-specific Tesla example UV, or null when we should generate a pattern instead. */
+export function getOfficialArt(film, vehicle) {
+  if (!film) return null
+  return film.officialByVehicle?.[vehicle] ?? null
+}
+
+/** Thumb for film lists: prefer Cybertruck art, then Model 3, then featured lookbook. */
+export function getFilmThumb(film) {
+  return (
+    film.officialByVehicle?.cybertruck ??
+    film.officialByVehicle?.model3 ??
+    (film.featured ? `/lookbook/${film.featured}` : null)
+  )
 }

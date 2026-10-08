@@ -2,16 +2,61 @@ import { Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { ContactShadows, Environment, OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import { getFilm } from '../films'
+import { getFilm, getOfficialArt } from '../films'
 import { useStudio } from '../store'
+import { loadImage, paintArtwork, PAINTSHOP } from '../paintshop'
 import { applyWrapState, BANDS, COVERAGE_CODE, finishProps, makePatternTexture } from './materials'
 import { prepareCybertruck } from './prepareCybertruck'
 import { prepareModel3 } from './prepareModel3'
 
-useGLTF.preload('/models/cybertruck/model.glb')
-useGLTF.preload('/models/highland/model.glb')
+const CYBERTRUCK_URL = '/models/cybertruck/model.glb'
+const MODEL3_URL = '/models/highland/model.glb'
 
-function useImageTexture(src) {
+/** Persist prepared vehicles across remounts so toggles stay responsive. */
+const preparedCache = {
+  cybertruck: null,
+  model3: null,
+}
+
+useGLTF.preload(CYBERTRUCK_URL)
+
+function warmSecondaryModel() {
+  const idle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 500))
+  idle(() => {
+    useGLTF.preload(MODEL3_URL)
+  })
+}
+
+function useArtworkTexture(src, fit, color, vehicle) {
+  const [loaded, setLoaded] = useState(null)
+  useEffect(() => {
+    if (!src) return undefined
+    let live = true
+    loadImage(src).then((image) => {
+      if (live) setLoaded({ src, image })
+    }).catch(() => {
+      if (live) setLoaded(null)
+    })
+    return () => { live = false }
+  }, [src])
+  const tex = useMemo(() => {
+    if (!src || loaded?.src !== src) return null
+    const canvas = document.createElement('canvas')
+    canvas.width = PAINTSHOP[vehicle].w
+    canvas.height = PAINTSHOP[vehicle].h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    paintArtwork(ctx, loaded.image, fit, color)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+    return texture
+  }, [src, loaded, fit, color, vehicle])
+  useEffect(() => () => tex?.dispose(), [tex])
+  return tex
+}
+
+function useOfficialTexture(src) {
   const [tex, setTex] = useState(null)
   useEffect(() => {
     if (!src) {
@@ -45,15 +90,18 @@ function PreparedVehicle({ prepared, vehicle }) {
   const finish = useStudio((s) => s.finish)
   const coverage = useStudio((s) => s.coverage)
   const customSrc = useStudio((s) => s.customSrc)
+  const customFit = useStudio((s) => s.customFit)
   const film = getFilm(wrapId)
-  const patternMap = useMemo(() => (customSrc ? null : makePatternTexture(film)), [film, customSrc])
-  const customMap = useImageTexture(customSrc)
+  const officialSrc = getOfficialArt(film, vehicle)
+  const patternMap = useMemo(() => (customSrc || officialSrc ? null : makePatternTexture(film)), [film, customSrc, officialSrc])
+  const officialMap = useOfficialTexture(customSrc ? null : officialSrc)
+  const customMap = useArtworkTexture(customSrc, customFit, film.color, vehicle)
 
   useEffect(() => () => patternMap?.dispose(), [patternMap])
 
   const bare = film.id === 'stainless' && !customSrc
   const props = finishProps(film.lockFinish ? film.finish : finish, bare && vehicle === 'cybertruck')
-  const mapToUse = customMap ?? patternMap
+  const mapToUse = customMap ?? officialMap ?? patternMap
 
   useLayoutEffect(() => {
     const base = vehicle === 'model3' ? '#f3f3f1' : '#d5d8de'
@@ -76,14 +124,20 @@ function PreparedVehicle({ prepared, vehicle }) {
 }
 
 function CybertruckModel() {
-  const gltf = useGLTF('/models/cybertruck/model.glb')
-  const prepared = useMemo(() => prepareCybertruck(gltf.scene), [gltf.scene])
+  const gltf = useGLTF(CYBERTRUCK_URL)
+  const prepared = useMemo(() => {
+    if (!preparedCache.cybertruck) preparedCache.cybertruck = prepareCybertruck(gltf.scene)
+    return preparedCache.cybertruck
+  }, [gltf.scene])
   return <PreparedVehicle prepared={prepared} vehicle="cybertruck" />
 }
 
 function Model3Model() {
-  const gltf = useGLTF('/models/highland/model.glb')
-  const prepared = useMemo(() => prepareModel3(gltf.scene), [gltf.scene])
+  const gltf = useGLTF(MODEL3_URL)
+  const prepared = useMemo(() => {
+    if (!preparedCache.model3) preparedCache.model3 = prepareModel3(gltf.scene)
+    return preparedCache.model3
+  }, [gltf.scene])
   return <PreparedVehicle prepared={prepared} vehicle="model3" />
 }
 
@@ -95,7 +149,7 @@ function CameraRig() {
     const narrow = size.width / Math.max(size.height, 1) < 0.9
     camera.fov = narrow ? 50 : 28
     camera.updateProjectionMatrix()
-    const dist = ct ? (narrow ? 9.4 : 8.1) : narrow ? 7.8 : 6.5
+    const dist = ct ? (narrow ? 10.4 : 10.2) : narrow ? 8.8 : 8.2
     camera.position.set(dist * 0.52, narrow ? 1.45 : ct ? 1.5 : 1.15, -dist * 0.82)
     if (controls) {
       controls.minDistance = narrow ? 4.2 : ct ? 6.2 : 5
@@ -110,17 +164,30 @@ function CameraRig() {
 function SceneBody() {
   const vehicle = useStudio((s) => s.vehicle)
   const autoRotate = useStudio((s) => s.autoRotate)
+  useEffect(() => {
+    warmSecondaryModel()
+  }, [])
   return (
     <>
       <color attach="background" args={['#0a0a0b']} />
       <ambientLight intensity={0.35} />
-      <directionalLight position={[4, 8, 2]} intensity={1.35} castShadow />
+      <directionalLight position={[4, 8, 2]} intensity={1.35} />
       <directionalLight position={[-6, 3, -4]} intensity={0.45} />
       <Suspense fallback={null}>
-        <Environment preset="city" environmentIntensity={0.9} />
+        <Environment preset="city" environmentIntensity={0.75} frames={1} />
+      </Suspense>
+      <Suspense fallback={null}>
         {vehicle === 'cybertruck' ? <CybertruckModel /> : <Model3Model />}
       </Suspense>
-      <ContactShadows position={[0, 0.01, 0]} opacity={0.55} scale={14} blur={2.4} far={8} />
+      <ContactShadows
+        position={[0, 0.01, 0]}
+        opacity={0.45}
+        scale={14}
+        blur={1.2}
+        far={8}
+        resolution={256}
+        frames={1}
+      />
       <OrbitControls
         makeDefault
         enablePan={false}
@@ -137,10 +204,9 @@ export default function VehicleScene() {
   return (
     <Canvas
       className="viewport"
-      shadows
-      dpr={[1, 1.75]}
+      dpr={[1, 1.5]}
       camera={{ fov: 28, near: 0.1, far: 80, position: [4.2, 1.5, -6.6] }}
-      gl={{ antialias: true, toneMappingExposure: 1.05 }}
+      gl={{ antialias: true, toneMappingExposure: 1.05, powerPreference: 'high-performance' }}
     >
       <SceneBody />
     </Canvas>

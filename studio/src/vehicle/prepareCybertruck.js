@@ -1,88 +1,144 @@
 import * as THREE from 'three'
 import { addMesh, createPaintMaterial, recenterGroup } from './materials'
 
+const KEY_PAINT = 0
+const KEY_GLASS = 1
+const KEY_HEAD = 2
+const KEY_TAIL = 3
+const KEY_TRIM = 4
+
 function classifyTriangle(px, py, pz, nx, ny, nz) {
+  // The source GLB merges tires, glazing and body into one steel material.
+  // Classify in normalized vehicle coordinates, including back-facing glass.
+  const wheelDistance = Math.min(Math.hypot(pz + 2.02, py - 0.49), Math.hypot(pz - 1.7, py - 0.49))
+  if (Math.abs(px) > 0.66 && wheelDistance < 0.5) return KEY_TRIM
+  if (py < 0.4 || (Math.abs(px) > 0.85 && wheelDistance < 0.62)) return KEY_TRIM
   const glass =
-    (ny > 0.2 && nz < -0.45 && py > 1.2 && py < 1.72 && pz < -0.35 && pz > -1.65 && Math.abs(px) < 0.88) ||
-    (Math.abs(nx) > 0.45 && Math.abs(ny) < 0.55 && py > 1.28 && py < 1.58 && pz > -0.9 && pz < 1.15 && Math.abs(px) > 0.72) ||
-    (nz > 0.6 && py > 1.28 && py < 1.62 && pz > 0.55 && pz < 1.15 && Math.abs(px) < 0.72)
-  if (glass) return 'glass'
-  if (py > 1.12 && py < 1.22 && pz < -2.45 && Math.abs(px) < 0.85 && nz < -0.3) return 'head'
-  if (py > 1.12 && py < 1.32 && pz > 2.45 && Math.abs(px) < 0.9 && nz > 0.4) return 'tail'
-  return 'paint'
+    (Math.abs(ny) > 0.75 && Math.abs(nz) > 0.2 && py > 1.38 && pz < -0.45 && pz > -1.55 && Math.abs(px) < 0.65) ||
+    (Math.abs(nx) > 0.85 && Math.abs(ny) < 0.4 && py > 1.34 && py < 1.73 && pz > -0.95 && pz < 0.7 && Math.abs(px) > 0.6) ||
+    (Math.abs(nz) > 0.6 && py > 1.28 && py < 1.62 && pz > 0.55 && pz < 1.15 && Math.abs(px) < 0.72)
+  if (glass) return KEY_GLASS
+  if (py > 1.12 && py < 1.22 && pz < -2.45 && Math.abs(px) < 0.85 && nz < -0.85) return KEY_HEAD
+  if (py > 1.12 && py < 1.32 && pz > 2.45 && Math.abs(px) < 0.9 && nz > 0.85) return KEY_TAIL
+  return KEY_PAINT
 }
 
 function splitGeometry(group, geometry, paintMat) {
-  const source = geometry.index ? geometry.toNonIndexed() : geometry
-  const pos = source.getAttribute('position')
-  const nor = source.getAttribute('normal')
-  const uv = source.getAttribute('uv')
-  if (!pos || !nor) {
+  const posAttr = geometry.getAttribute('position')
+  const norAttr = geometry.getAttribute('normal')
+  const uvAttr = geometry.getAttribute('uv')
+  if (!posAttr || !norAttr) {
     addMesh(group, geometry, paintMat)
     return
   }
 
-  const buckets = new Map()
-  const bucket = (key) => {
-    let b = buckets.get(key)
-    if (!b) {
-      b = { positions: [], normals: [], uvs: [] }
-      buckets.set(key, b)
+  const pos = posAttr.array
+  const nor = norAttr.array
+  const uvs = uvAttr?.array
+  const index = geometry.index?.array
+  const triCount = index ? index.length / 3 : posAttr.count / 3
+  const keys = new Uint8Array(triCount)
+  const counts = [0, 0, 0, 0, 0]
+
+  for (let t = 0; t < triCount; t++) {
+    const base = t * 3
+    let i0
+    let i1
+    let i2
+    if (index) {
+      i0 = index[base]
+      i1 = index[base + 1]
+      i2 = index[base + 2]
+    } else {
+      i0 = base
+      i1 = base + 1
+      i2 = base + 2
     }
-    return b
+    const i0_3 = i0 * 3
+    const i1_3 = i1 * 3
+    const i2_3 = i2 * 3
+    const px = (pos[i0_3] + pos[i1_3] + pos[i2_3]) / 3
+    const py = (pos[i0_3 + 1] + pos[i1_3 + 1] + pos[i2_3 + 1]) / 3
+    const pz = (pos[i0_3 + 2] + pos[i1_3 + 2] + pos[i2_3 + 2]) / 3
+    const nx = (nor[i0_3] + nor[i1_3] + nor[i2_3]) / 3
+    const ny = (nor[i0_3 + 1] + nor[i1_3 + 1] + nor[i2_3 + 1]) / 3
+    const nz = (nor[i0_3 + 2] + nor[i1_3 + 2] + nor[i2_3 + 2]) / 3
+    const key = classifyTriangle(px, py, pz, nx, ny, nz)
+    keys[t] = key
+    counts[key]++
   }
 
-  for (let i = 0; i < pos.count; i += 3) {
-    let px = 0
-    let py = 0
-    let pz = 0
-    let nx = 0
-    let ny = 0
-    let nz = 0
-    for (let k = 0; k < 3; k++) {
-      px += pos.getX(i + k)
-      py += pos.getY(i + k)
-      pz += pos.getZ(i + k)
-      nx += nor.getX(i + k)
-      ny += nor.getY(i + k)
-      nz += nor.getZ(i + k)
+  const buckets = counts.map((n) => ({
+    positions: new Float32Array(n * 9),
+    normals: new Float32Array(n * 9),
+    uvs: new Float32Array(n * 6),
+    cursor: 0,
+  }))
+
+  for (let t = 0; t < triCount; t++) {
+    const b = buckets[keys[t]]
+    const base = t * 3
+    let i0
+    let i1
+    let i2
+    if (index) {
+      i0 = index[base]
+      i1 = index[base + 1]
+      i2 = index[base + 2]
+    } else {
+      i0 = base
+      i1 = base + 1
+      i2 = base + 2
     }
-    const key = classifyTriangle(px / 3, py / 3, pz / 3, nx / 3, ny / 3, nz / 3)
-    const b = bucket(key)
+    const pc = b.cursor * 9
+    const uc = b.cursor * 6
+    const verts = [i0, i1, i2]
     for (let k = 0; k < 3; k++) {
-      const idx = i + k
-      b.positions.push(pos.getX(idx), pos.getY(idx), pos.getZ(idx))
-      b.normals.push(nor.getX(idx), nor.getY(idx), nor.getZ(idx))
-      b.uvs.push(uv ? uv.getX(idx) : 0, uv ? uv.getY(idx) : 0)
+      const ia = verts[k] * 3
+      const ib = verts[k] * 2
+      const o = pc + k * 3
+      b.positions[o] = pos[ia]
+      b.positions[o + 1] = pos[ia + 1]
+      b.positions[o + 2] = pos[ia + 2]
+      b.normals[o] = nor[ia]
+      b.normals[o + 1] = nor[ia + 1]
+      b.normals[o + 2] = nor[ia + 2]
+      b.uvs[uc + k * 2] = uvs ? uvs[ib] : 0
+      b.uvs[uc + k * 2 + 1] = uvs ? uvs[ib + 1] : 0
     }
+    b.cursor++
   }
 
-  if (source !== geometry) source.dispose()
   geometry.dispose()
 
-  const mats = new Map([['paint', paintMat]])
-  for (const [key, data] of buckets) {
-    if (!data.positions.length) continue
+  const mats = new Map([[KEY_PAINT, paintMat]])
+  for (let key = 0; key < 5; key++) {
+    const data = buckets[key]
+    if (!data.cursor) continue
     const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3))
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3))
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2))
+    geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3))
+    geo.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2))
 
     let mat = mats.get(key)
     if (!mat) {
-      mat = new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide })
-      if (key === 'glass') {
+      mat = new THREE.MeshPhysicalMaterial({ side: THREE.FrontSide })
+      if (key === KEY_TRIM) {
+        mat.color.set('#16181a')
+        mat.roughness = 0.85
+        mat.metalness = 0.08
+      } else if (key === KEY_GLASS) {
         mat.transparent = true
-        mat.opacity = 0.38
+        mat.opacity = 0.82
         mat.roughness = 0.05
         mat.metalness = 0.06
         mat.color.set('#1a3040')
         mat.depthWrite = true
-      } else if (key === 'head') {
+      } else if (key === KEY_HEAD) {
         mat.color.set('#e7eef8')
         mat.emissive.set('#edf5ff')
         mat.emissiveIntensity = 2.2
-      } else if (key === 'tail') {
+      } else if (key === KEY_TAIL) {
         mat.color.set('#8c0714')
         mat.emissive.set('#ed1828')
         mat.emissiveIntensity = 2.6
@@ -120,6 +176,8 @@ export function prepareCybertruck(scene) {
 
   const group = new THREE.Group()
   const paint = createPaintMaterial()
+  // The GLB includes opposing faces; rendering both sides causes z-fighting.
+  paint.side = THREE.FrontSide
 
   root.traverse((obj) => {
     if (!obj.isMesh || skip.has(obj)) return

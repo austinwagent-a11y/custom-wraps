@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 
 export const useStudio = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       wrapId: 'khaki',
       vehicle: 'cybertruck',
       finish: 'satin',
@@ -16,22 +16,36 @@ export const useStudio = create(
       upload: null,
       toast: null,
 
-      setWrapId: (wrapId) => set({ wrapId, panel: 'films' }),
-      setVehicle: (vehicle) => set({ vehicle }),
+      setWrapId: (wrapId) => {
+        get().clearCustom()
+        set({ wrapId, panel: 'films' })
+      },
+      setVehicle: (vehicle) => set({ vehicle, ...(vehicle === 'model3' ? { coverage: 'full' } : {}) }),
       setFinish: (finish) => set({ finish }),
       setCoverage: (coverage) => set({ coverage }),
       setCategory: (category) => set({ category }),
       setPanel: (panel) => set({ panel }),
       setAutoRotate: (autoRotate) => set({ autoRotate }),
-      setCustomSrc: (customSrc) => set({ customSrc }),
+      setCustomSrc: (customSrc) => {
+        if (get().customSrc) URL.revokeObjectURL(get().customSrc)
+        set({ customSrc, customFit: { x: 0, y: 0, scale: 1 } })
+      },
       setCustomFit: (customFit) => set({ customFit }),
-      clearCustom: () => set({ customSrc: null, customFit: { x: 0, y: 0, scale: 1 } }),
-      setUpload: (upload) => set({ upload }),
-      clearUpload: () => set({ upload: null }),
+      clearCustom: () => get().setCustomSrc(null),
+      setUpload: (upload) => {
+        if (get().upload?.url) URL.revokeObjectURL(get().upload.url)
+        set({ upload })
+      },
+      clearUpload: () => get().setUpload(null),
       setToast: (toast) => set({ toast }),
     }),
     {
       name: 'ad-wrap-studio',
+      merge: (saved, current) => ({
+        ...current,
+        ...saved,
+        ...(saved?.vehicle === 'model3' ? { coverage: 'full' } : {}),
+      }),
       partialize: (s) => ({
         wrapId: s.wrapId,
         vehicle: s.vehicle,
