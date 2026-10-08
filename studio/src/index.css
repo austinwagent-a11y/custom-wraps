@@ -199,14 +199,9 @@ button {
 .tabs {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
-  overflow-x: auto;
   padding: 0 0.75rem 0.5rem;
-  scrollbar-width: none;
-}
-
-.tabs::-webkit-scrollbar {
-  display: none;
 }
 
 .tab {

@@ -269,7 +269,7 @@ async function makeWrapBlob(film, coverage, customSrc, fit, vehicle) {
   if (customSrc) {
     const img = await loadImage(customSrc)
     paintArtwork(ctx, img, fit, film.color)
-  } else if (film.official && vehicle === 'cybertruck') {
+  } else if (film.official) {
     const img = await loadImage(film.official)
     ctx.drawImage(img, 0, 0, spec.w, spec.h)
   } else {
