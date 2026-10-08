@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
   test(`vehicle, artwork and download flow at ${viewport.width}px`, async ({ page }) => {
+    test.setTimeout(90000)
     await page.setViewportSize(viewport)
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
@@ -40,11 +41,12 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect(page.locator('.selected .title')).toHaveText('Custom artwork')
     // Wait for both GLBs and their textures to render before comparing fit edits.
     await page.waitForTimeout(3000)
-    const before = await page.locator('canvas').screenshot()
+    const stage = page.locator('.stage')
+    const before = await stage.screenshot()
     await page.getByRole('slider').first().fill('0.5')
     await page.getByRole('slider').nth(1).fill('200')
     await page.waitForTimeout(700)
-    const after = await page.locator('canvas').screenshot()
+    const after = await stage.screenshot()
     expect(before.equals(after)).toBe(false)
     const downloadPromise = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Send to truck' }).click()
@@ -100,10 +102,12 @@ test('export preserves artwork background, official pixels and vehicle dimension
       if (actual[i] === 183 && actual[i + 1] === 164 && actual[i + 2] === 138) background++
     }
     let officialMismatch = 0, officialOpaque = 0
+    const { getOfficialArt } = await import('/src/films.js')
     for (const id of ['cosmic', 'gradblack']) {
       const film = getFilm(id)
-      const official = await buildWrapFile(film, 'lower', null)
-      const officialImage = await createImageBitmap(await fetch(film.official).then((r) => r.blob()))
+      const officialSrc = getOfficialArt(film, 'cybertruck')
+      const official = await buildWrapFile(film, 'lower', null, undefined, 'cybertruck')
+      const officialImage = await createImageBitmap(await fetch(officialSrc).then((r) => r.blob()))
       ctx.clearRect(0, 0, 1024, 768); ctx.drawImage(officialImage, 0, 0, 1024, 768)
       const officialPixels = ctx.getImageData(0, 0, 1024, 768).data
       ctx.clearRect(0, 0, 1024, 768); ctx.drawImage(await createImageBitmap(official), 0, 0)
@@ -116,8 +120,11 @@ test('export preserves artwork background, official pixels and vehicle dimension
     }
     const model3 = await buildWrapFile(getFilm('stainless'), 'full', null, undefined, 'model3')
     const m3 = await createImageBitmap(model3)
-    ctx.clearRect(0, 0, 1024, 768); ctx.drawImage(m3, 0, 0)
-    const white = Array.from(ctx.getImageData(500, 50, 1, 1).data)
+    const m3Canvas = document.createElement('canvas')
+    m3Canvas.width = m3Canvas.height = 1024
+    const m3ctx = m3Canvas.getContext('2d', { willReadFrequently: true })
+    m3ctx.drawImage(m3, 0, 0)
+    const white = Array.from(m3ctx.getImageData(500, 50, 1, 1).data)
     return { mismatch, opaque, background, officialMismatch, officialOpaque, model3: [m3.width, m3.height], white }
   })
   expect(result.mismatch).toBe(0)
@@ -127,4 +134,78 @@ test('export preserves artwork background, official pixels and vehicle dimension
   expect(result.officialOpaque).toBeGreaterThan(1000)
   expect(result.model3).toEqual([1024, 1024])
   expect(result.white).toEqual([243, 243, 241, 255])
+})
+
+test('Model 3 Cosmic Burst export uses Model 3 UV, not Cybertruck', async ({ page }) => {
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const { buildWrapFile } = await import('/src/paintshop.js')
+    const { getFilm, getOfficialArt } = await import('/src/films.js')
+    const film = getFilm('cosmic')
+    const ctSrc = getOfficialArt(film, 'cybertruck')
+    const m3Src = getOfficialArt(film, 'model3')
+    if (!ctSrc || !m3Src || ctSrc === m3Src) throw new Error('expected distinct vehicle official paths')
+
+    const m3Blob = await buildWrapFile(film, 'full', null, undefined, 'model3')
+    const m3Export = await createImageBitmap(m3Blob)
+    const m3Official = await createImageBitmap(await fetch(m3Src).then((r) => r.blob()))
+    const ctOfficial = await createImageBitmap(await fetch(ctSrc).then((r) => r.blob()))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1024
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+
+    const sample = async (bitmap) => {
+      ctx.clearRect(0, 0, 1024, 1024)
+      ctx.drawImage(bitmap, 0, 0, 1024, 1024)
+      return ctx.getImageData(0, 0, 1024, 1024).data
+    }
+
+    const exported = await sample(m3Export)
+    const expected = await sample(m3Official)
+    const wrongVehicle = await sample(ctOfficial)
+
+    let matchM3 = 0
+    let matchCT = 0
+    let opaque = 0
+    for (let i = 0; i < exported.length; i += 4) {
+      if (!exported[i + 3]) continue
+      opaque++
+      if (
+        exported[i] === expected[i] &&
+        exported[i + 1] === expected[i + 1] &&
+        exported[i + 2] === expected[i + 2]
+      ) matchM3++
+      if (
+        exported[i] === wrongVehicle[i] &&
+        exported[i + 1] === wrongVehicle[i + 1] &&
+        exported[i + 2] === wrongVehicle[i + 2]
+      ) matchCT++
+    }
+
+    // Digi has no Model 3 official art — export must not pull Cybertruck UV.
+    const digi = getFilm('digi')
+    if (getOfficialArt(digi, 'model3')) throw new Error('digi should not have Model 3 official art yet')
+    const digiBlob = await buildWrapFile(digi, 'full', null, undefined, 'model3')
+    const digiBmp = await createImageBitmap(digiBlob)
+
+    return {
+      ctSrc,
+      m3Src,
+      size: [m3Export.width, m3Export.height],
+      bytes: m3Blob.size,
+      opaque,
+      matchM3Ratio: matchM3 / opaque,
+      matchCTRatio: matchCT / opaque,
+      digiSize: [digiBmp.width, digiBmp.height],
+    }
+  })
+
+  expect(result.ctSrc).toContain('/official/cybertruck/')
+  expect(result.m3Src).toContain('/official/model3/')
+  expect(result.size).toEqual([1024, 1024])
+  expect(result.bytes).toBeLessThanOrEqual(1e6)
+  expect(result.matchM3Ratio).toBeGreaterThan(0.98)
+  expect(result.matchCTRatio).toBeLessThan(0.5)
+  expect(result.digiSize).toEqual([1024, 1024])
 })

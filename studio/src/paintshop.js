@@ -1,3 +1,5 @@
+import { getOfficialArt } from './films'
+
 export const MAX_BYTES = 1e6
 export const PAINTSHOP = {
   cybertruck: { w: 1024, h: 768, mask: '/paintshop/mask.png', label: 'Cybertruck AWD Premium' },
@@ -244,7 +246,8 @@ export function wrapFileName(label, vehicle) {
 
 export function buildWrapFile(film, coverage, customSrc, fit = { x: 0, y: 0, scale: 1 }, vehicle = 'cybertruck') {
   if (vehicle === 'model3') coverage = 'full'
-  const key = `${vehicle}:${film.id}:${coverage}:${film.color}:${film.pattern ?? ''}:${customSrc ?? ''}:${fit.x}:${fit.y}:${fit.scale}`
+  const official = getOfficialArt(film, vehicle)
+  const key = `${vehicle}:${film.id}:${coverage}:${film.color}:${film.pattern ?? ''}:${official ?? ''}:${customSrc ?? ''}:${fit.x}:${fit.y}:${fit.scale}`
   const hit = fileCache.get(key)
   if (hit) return hit
   const p = makeWrapBlob(film, coverage, customSrc, fit, vehicle).catch((err) => {
@@ -265,12 +268,13 @@ async function makeWrapBlob(film, coverage, customSrc, fit, vehicle) {
   canvas.height = spec.h
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) throw new Error('canvas')
+  const official = getOfficialArt(film, vehicle)
 
   if (customSrc) {
     const img = await loadImage(customSrc)
     paintArtwork(ctx, img, fit, film.color)
-  } else if (film.official) {
-    const img = await loadImage(film.official)
+  } else if (official) {
+    const img = await loadImage(official)
     ctx.drawImage(img, 0, 0, spec.w, spec.h)
   } else {
     const pattern = film.finish === 'shift' ? 'shift' : film.pattern ?? 'solid'

@@ -2,7 +2,7 @@ import { Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { ContactShadows, Environment, OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import { getFilm } from '../films'
+import { getFilm, getOfficialArt } from '../films'
 import { useStudio } from '../store'
 import { loadImage, paintArtwork, PAINTSHOP } from '../paintshop'
 import { applyWrapState, BANDS, COVERAGE_CODE, finishProps, makePatternTexture } from './materials'
@@ -92,8 +92,9 @@ function PreparedVehicle({ prepared, vehicle }) {
   const customSrc = useStudio((s) => s.customSrc)
   const customFit = useStudio((s) => s.customFit)
   const film = getFilm(wrapId)
-  const patternMap = useMemo(() => (customSrc || film.official ? null : makePatternTexture(film)), [film, customSrc])
-  const officialMap = useOfficialTexture(customSrc ? null : film.official)
+  const officialSrc = getOfficialArt(film, vehicle)
+  const patternMap = useMemo(() => (customSrc || officialSrc ? null : makePatternTexture(film)), [film, customSrc, officialSrc])
+  const officialMap = useOfficialTexture(customSrc ? null : officialSrc)
   const customMap = useArtworkTexture(customSrc, customFit, film.color, vehicle)
 
   useEffect(() => () => patternMap?.dispose(), [patternMap])

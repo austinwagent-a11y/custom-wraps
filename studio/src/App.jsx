@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CATEGORIES, COVERAGES, FINISHES, FILMS, VEHICLES, getFilm } from './films'
+import { CATEGORIES, COVERAGES, FINISHES, FILMS, VEHICLES, getFilm, getFilmThumb, getOfficialArt } from './films'
 import { buildWrapFile, loadImage, MAX_BYTES, shareOrDownload, wrapFileName } from './paintshop'
 import { useStudio } from './store'
 import VehicleScene from './vehicle/VehicleScene'
 
 function filmThumb(film) {
-  if (film.featured) return `/lookbook/${film.featured}`
-  if (film.official) return film.official
-  return null
+  return getFilmThumb(film)
 }
 
 function FilmsList() {
@@ -226,7 +224,8 @@ function SendButton({ block }) {
   useEffect(() => {
     let dead = false
     setReady(false)
-    if (vehicle === 'cybertruck' && film.official && !customSrc && coverage === 'full') {
+    const officialArt = getOfficialArt(film, vehicle)
+    if (officialArt && !customSrc && coverage === 'full') {
       setReady(true)
       return undefined
     }
@@ -248,15 +247,16 @@ function SendButton({ block }) {
   async function onSend() {
     setBusy(true)
     try {
-      const official = vehicle === 'cybertruck' && film.official && !customSrc && coverage === 'full'
-      const blob = official
-        ? await fetch(film.official).then((r) => {
+      const officialArt = getOfficialArt(film, vehicle)
+      const useOfficialFile = officialArt && !customSrc && coverage === 'full'
+      const blob = useOfficialFile
+        ? await fetch(officialArt).then((r) => {
             if (!r.ok) throw new Error('The official wrap could not be downloaded.')
             return r.blob()
           })
         : await buildWrapFile(film, coverage, customSrc, customFit, vehicle)
       if (blob.size > MAX_BYTES) throw new Error('This wrap exceeds the 1 MB upload limit.')
-      const name = official ? film.official.split('/').pop() : wrapFileName(customSrc ? 'Custom' : film.name, vehicle)
+      const name = useOfficialFile ? officialArt.split('/').pop() : wrapFileName(customSrc ? 'Custom' : film.name, vehicle)
       const result = await shareOrDownload(blob, name, `${vehicleMeta.name} ${vehicleMeta.trim}`)
       setUpload({ name, vehicle, bytes: blob.size, url: URL.createObjectURL(blob) })
       if (result === 'saved') setToast('Wrap file saved')
