@@ -56,6 +56,35 @@ function useArtworkTexture(src, fit, color, vehicle) {
   return tex
 }
 
+function useOfficialTexture(src) {
+  const [tex, setTex] = useState(null)
+  useEffect(() => {
+    if (!src) {
+      setTex(null)
+      return undefined
+    }
+    let live = true
+    const loader = new THREE.TextureLoader()
+    loader.load(
+      src,
+      (t) => {
+        t.colorSpace = THREE.SRGBColorSpace
+        t.wrapS = t.wrapT = THREE.RepeatWrapping
+        if (live) setTex(t)
+      },
+      undefined,
+      () => {
+        if (live) setTex(null)
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [src])
+  useEffect(() => () => tex?.dispose(), [tex])
+  return tex
+}
+
 function PreparedVehicle({ prepared, vehicle }) {
   const wrapId = useStudio((s) => s.wrapId)
   const finish = useStudio((s) => s.finish)
@@ -63,14 +92,15 @@ function PreparedVehicle({ prepared, vehicle }) {
   const customSrc = useStudio((s) => s.customSrc)
   const customFit = useStudio((s) => s.customFit)
   const film = getFilm(wrapId)
-  const patternMap = useMemo(() => (customSrc ? null : makePatternTexture(film)), [film, customSrc])
+  const patternMap = useMemo(() => (customSrc || film.official ? null : makePatternTexture(film)), [film, customSrc])
+  const officialMap = useOfficialTexture(customSrc ? null : film.official)
   const customMap = useArtworkTexture(customSrc, customFit, film.color, vehicle)
 
   useEffect(() => () => patternMap?.dispose(), [patternMap])
 
   const bare = film.id === 'stainless' && !customSrc
   const props = finishProps(film.lockFinish ? film.finish : finish, bare && vehicle === 'cybertruck')
-  const mapToUse = customMap ?? patternMap
+  const mapToUse = customMap ?? officialMap ?? patternMap
 
   useLayoutEffect(() => {
     const base = vehicle === 'model3' ? '#f3f3f1' : '#d5d8de'
