@@ -4,6 +4,7 @@ import { ContactShadows, Environment, OrbitControls, useGLTF } from '@react-thre
 import * as THREE from 'three'
 import { getFilm } from '../films'
 import { useStudio } from '../store'
+import { loadImage, paintArtwork, PAINTSHOP } from '../paintshop'
 import { applyWrapState, BANDS, COVERAGE_CODE, finishProps, makePatternTexture } from './materials'
 import { prepareCybertruck } from './prepareCybertruck'
 import { prepareModel3 } from './prepareModel3'
@@ -11,31 +12,31 @@ import { prepareModel3 } from './prepareModel3'
 useGLTF.preload('/models/cybertruck/model.glb')
 useGLTF.preload('/models/highland/model.glb')
 
-function useImageTexture(src) {
-  const [tex, setTex] = useState(null)
+function useArtworkTexture(src, fit, color, vehicle) {
+  const [loaded, setLoaded] = useState(null)
   useEffect(() => {
-    if (!src) {
-      setTex(null)
-      return undefined
-    }
+    if (!src) return undefined
     let live = true
-    const loader = new THREE.TextureLoader()
-    loader.load(
-      src,
-      (t) => {
-        t.colorSpace = THREE.SRGBColorSpace
-        t.wrapS = t.wrapT = THREE.RepeatWrapping
-        if (live) setTex(t)
-      },
-      undefined,
-      () => {
-        if (live) setTex(null)
-      },
-    )
-    return () => {
-      live = false
-    }
+    loadImage(src).then((image) => {
+      if (live) setLoaded({ src, image })
+    }).catch(() => {
+      if (live) setLoaded(null)
+    })
+    return () => { live = false }
   }, [src])
+  const tex = useMemo(() => {
+    if (!src || loaded?.src !== src) return null
+    const canvas = document.createElement('canvas')
+    canvas.width = PAINTSHOP[vehicle].w
+    canvas.height = PAINTSHOP[vehicle].h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    paintArtwork(ctx, loaded.image, fit, color)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+    return texture
+  }, [src, loaded, fit, color, vehicle])
   useEffect(() => () => tex?.dispose(), [tex])
   return tex
 }
@@ -45,9 +46,10 @@ function PreparedVehicle({ prepared, vehicle }) {
   const finish = useStudio((s) => s.finish)
   const coverage = useStudio((s) => s.coverage)
   const customSrc = useStudio((s) => s.customSrc)
+  const customFit = useStudio((s) => s.customFit)
   const film = getFilm(wrapId)
   const patternMap = useMemo(() => (customSrc ? null : makePatternTexture(film)), [film, customSrc])
-  const customMap = useImageTexture(customSrc)
+  const customMap = useArtworkTexture(customSrc, customFit, film.color, vehicle)
 
   useEffect(() => () => patternMap?.dispose(), [patternMap])
 
@@ -95,7 +97,7 @@ function CameraRig() {
     const narrow = size.width / Math.max(size.height, 1) < 0.9
     camera.fov = narrow ? 50 : 28
     camera.updateProjectionMatrix()
-    const dist = ct ? (narrow ? 9.4 : 8.1) : narrow ? 7.8 : 6.5
+    const dist = ct ? (narrow ? 10.4 : 10.2) : narrow ? 8.8 : 8.2
     camera.position.set(dist * 0.52, narrow ? 1.45 : ct ? 1.5 : 1.15, -dist * 0.82)
     if (controls) {
       controls.minDistance = narrow ? 4.2 : ct ? 6.2 : 5
@@ -114,7 +116,7 @@ function SceneBody() {
     <>
       <color attach="background" args={['#0a0a0b']} />
       <ambientLight intensity={0.35} />
-      <directionalLight position={[4, 8, 2]} intensity={1.35} castShadow />
+      <directionalLight position={[4, 8, 2]} intensity={1.35} castShadow shadow-bias={-0.001} shadow-normalBias={0.04} shadow-mapSize={[1024, 1024]} />
       <directionalLight position={[-6, 3, -4]} intensity={0.45} />
       <Suspense fallback={null}>
         <Environment preset="city" environmentIntensity={0.9} />
