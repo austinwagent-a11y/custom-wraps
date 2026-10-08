@@ -2,6 +2,18 @@
 
 This repository provides templates and examples for creating custom wrap designs for your Tesla's 3D vehicle visualization. Personalize your car's appearance in the Paint Shop with your own unique designs.
 
+## A&D Wrap Generator
+
+Live studio (Cybertruck + Model 3, film library, Tune / Yours, Paint Shop PNG export):
+
+```bash
+cd studio
+npm install
+npm run dev
+```
+
+See [`studio/README.md`](studio/README.md).
+
 ## How to Use Custom Wraps
 
 1. **Download** the template for your specific vehicle model (see links below)
