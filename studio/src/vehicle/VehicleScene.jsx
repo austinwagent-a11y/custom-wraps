@@ -9,8 +9,23 @@ import { applyWrapState, BANDS, COVERAGE_CODE, finishProps, makePatternTexture }
 import { prepareCybertruck } from './prepareCybertruck'
 import { prepareModel3 } from './prepareModel3'
 
-useGLTF.preload('/models/cybertruck/model.glb')
-useGLTF.preload('/models/highland/model.glb')
+const CYBERTRUCK_URL = '/models/cybertruck/model.glb'
+const MODEL3_URL = '/models/highland/model.glb'
+
+/** Persist prepared vehicles across remounts so toggles stay responsive. */
+const preparedCache = {
+  cybertruck: null,
+  model3: null,
+}
+
+useGLTF.preload(CYBERTRUCK_URL)
+
+function warmSecondaryModel() {
+  const idle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 500))
+  idle(() => {
+    useGLTF.preload(MODEL3_URL)
+  })
+}
 
 function useArtworkTexture(src, fit, color, vehicle) {
   const [loaded, setLoaded] = useState(null)
@@ -78,14 +93,20 @@ function PreparedVehicle({ prepared, vehicle }) {
 }
 
 function CybertruckModel() {
-  const gltf = useGLTF('/models/cybertruck/model.glb')
-  const prepared = useMemo(() => prepareCybertruck(gltf.scene), [gltf.scene])
+  const gltf = useGLTF(CYBERTRUCK_URL)
+  const prepared = useMemo(() => {
+    if (!preparedCache.cybertruck) preparedCache.cybertruck = prepareCybertruck(gltf.scene)
+    return preparedCache.cybertruck
+  }, [gltf.scene])
   return <PreparedVehicle prepared={prepared} vehicle="cybertruck" />
 }
 
 function Model3Model() {
-  const gltf = useGLTF('/models/highland/model.glb')
-  const prepared = useMemo(() => prepareModel3(gltf.scene), [gltf.scene])
+  const gltf = useGLTF(MODEL3_URL)
+  const prepared = useMemo(() => {
+    if (!preparedCache.model3) preparedCache.model3 = prepareModel3(gltf.scene)
+    return preparedCache.model3
+  }, [gltf.scene])
   return <PreparedVehicle prepared={prepared} vehicle="model3" />
 }
 
@@ -112,17 +133,30 @@ function CameraRig() {
 function SceneBody() {
   const vehicle = useStudio((s) => s.vehicle)
   const autoRotate = useStudio((s) => s.autoRotate)
+  useEffect(() => {
+    warmSecondaryModel()
+  }, [])
   return (
     <>
       <color attach="background" args={['#0a0a0b']} />
       <ambientLight intensity={0.35} />
-      <directionalLight position={[4, 8, 2]} intensity={1.35} castShadow shadow-bias={-0.001} shadow-normalBias={0.04} shadow-mapSize={[1024, 1024]} />
+      <directionalLight position={[4, 8, 2]} intensity={1.35} />
       <directionalLight position={[-6, 3, -4]} intensity={0.45} />
       <Suspense fallback={null}>
-        <Environment preset="city" environmentIntensity={0.9} />
+        <Environment preset="city" environmentIntensity={0.75} frames={1} />
+      </Suspense>
+      <Suspense fallback={null}>
         {vehicle === 'cybertruck' ? <CybertruckModel /> : <Model3Model />}
       </Suspense>
-      <ContactShadows position={[0, 0.01, 0]} opacity={0.55} scale={14} blur={2.4} far={8} />
+      <ContactShadows
+        position={[0, 0.01, 0]}
+        opacity={0.45}
+        scale={14}
+        blur={1.2}
+        far={8}
+        resolution={256}
+        frames={1}
+      />
       <OrbitControls
         makeDefault
         enablePan={false}
@@ -139,10 +173,9 @@ export default function VehicleScene() {
   return (
     <Canvas
       className="viewport"
-      shadows
-      dpr={[1, 1.75]}
+      dpr={[1, 1.5]}
       camera={{ fov: 28, near: 0.1, far: 80, position: [4.2, 1.5, -6.6] }}
-      gl={{ antialias: true, toneMappingExposure: 1.05 }}
+      gl={{ antialias: true, toneMappingExposure: 1.05, powerPreference: 'high-performance' }}
     >
       <SceneBody />
     </Canvas>
