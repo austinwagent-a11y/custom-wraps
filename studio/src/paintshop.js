@@ -1,4 +1,4 @@
-const MAX_BYTES = 1e6
+export const MAX_BYTES = 1e6
 export const PAINTSHOP = {
   cybertruck: { w: 1024, h: 768, mask: '/paintshop/mask.png', label: 'Cybertruck AWD Premium' },
   model3: { w: 1024, h: 1024, mask: '/paintshop/model3-mask.png', label: 'Model 3 Standard' },
@@ -30,6 +30,7 @@ function loadMask(src, w, h) {
     img.onerror = () => reject(new Error('template'))
     img.src = src
   })
+  p.catch(() => maskCache.delete(src))
   maskCache.set(src, p)
   return p
 }
@@ -216,7 +217,7 @@ function quantize(imageData, step) {
   }
 }
 
-function loadImage(src) {
+export function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
@@ -225,12 +226,24 @@ function loadImage(src) {
   })
 }
 
+/** Compose artwork identically for the preview texture and exported template. */
+export function paintArtwork(ctx, img, fit, color) {
+  const { width: w, height: h } = ctx.canvas
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, w, h)
+  const scale = Math.max(w / img.width, h / img.height) * fit.scale
+  const dw = img.width * scale
+  const dh = img.height * scale
+  ctx.drawImage(img, (w - dw) / 2 + fit.x, (h - dh) / 2 + fit.y, dw, dh)
+}
+
 export function wrapFileName(label, vehicle) {
   const clean = label.replace(/[^A-Za-z0-9 _-]/g, ' ').replace(/\s+/g, ' ').trim()
   return `${`${vehicle === 'model3' ? 'M3 ' : 'CT '}${clean}`.slice(0, 26).trim()}.png`
 }
 
 export function buildWrapFile(film, coverage, customSrc, fit = { x: 0, y: 0, scale: 1 }, vehicle = 'cybertruck') {
+  if (vehicle === 'model3') coverage = 'full'
   const key = `${vehicle}:${film.id}:${coverage}:${film.color}:${film.pattern ?? ''}:${customSrc ?? ''}:${fit.x}:${fit.y}:${fit.scale}`
   const hit = fileCache.get(key)
   if (hit) return hit
@@ -238,6 +251,8 @@ export function buildWrapFile(film, coverage, customSrc, fit = { x: 0, y: 0, sca
     fileCache.delete(key)
     throw err
   })
+  // Keep slider edits and uploaded artwork from accumulating indefinitely.
+  if (fileCache.size >= 4) fileCache.delete(fileCache.keys().next().value)
   fileCache.set(key, p)
   return p
 }
@@ -253,13 +268,10 @@ async function makeWrapBlob(film, coverage, customSrc, fit, vehicle) {
 
   if (customSrc) {
     const img = await loadImage(customSrc)
-    const scale = Math.max(spec.w / img.width, spec.h / img.height) * fit.scale
-    const dw = img.width * scale
-    const dh = img.height * scale
-    ctx.save()
-    ctx.translate(fit.x, fit.y)
-    ctx.drawImage(img, (spec.w - dw) / 2, (spec.h - dh) / 2, dw, dh)
-    ctx.restore()
+    paintArtwork(ctx, img, fit, film.color)
+  } else if (film.official && vehicle === 'cybertruck') {
+    const img = await loadImage(film.official)
+    ctx.drawImage(img, 0, 0, spec.w, spec.h)
   } else {
     const pattern = film.finish === 'shift' ? 'shift' : film.pattern ?? 'solid'
     if (spec.h === 768) {
@@ -270,7 +282,7 @@ async function makeWrapBlob(film, coverage, customSrc, fit, vehicle) {
       tmp.height = 768
       const tctx = tmp.getContext('2d')
       if (!tctx) throw new Error('canvas')
-      paintPattern(tctx, pattern, film.color)
+      paintPattern(tctx, pattern, film.id === 'stainless' ? '#f3f3f1' : film.color)
       ctx.drawImage(tmp, 0, 0, spec.w, spec.h)
     }
   }
@@ -294,7 +306,7 @@ async function makeWrapBlob(film, coverage, customSrc, fit, vehicle) {
         dst[p] = src[p] ?? 0
         dst[p + 1] = src[p + 1] ?? 0
         dst[p + 2] = src[p + 2] ?? 0
-        dst[p + 3] = 255
+        dst[p + 3] = src[p + 3] ?? 0
       }
       octx.putImageData(image, 0, 0)
       out.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('png'))), 'image/png')
@@ -303,6 +315,7 @@ async function makeWrapBlob(film, coverage, customSrc, fit, vehicle) {
   let blob = await encode(1)
   if (blob.size > MAX_BYTES) blob = await encode(32)
   if (blob.size > MAX_BYTES) blob = await encode(64)
+  if (blob.size > MAX_BYTES) throw new Error('This artwork is too detailed for a 1 MB wrap. Try a simpler image.')
   return blob
 }
 
