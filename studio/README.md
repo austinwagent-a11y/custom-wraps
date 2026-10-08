@@ -35,13 +35,31 @@ npm run preview
 ## Paint Shop export
 
 - Cybertruck: 1024×768 PNG using `/paintshop/mask.png`
-- Model 3: 1024×1024 PNG using `/paintshop/model3-mask.png`
-- Official Tesla example wraps download as-is for Cybertruck when selected
+- Model 3: 1024×1024 PNG using `/paintshop/model3-mask.png`; full coverage only (the supplied mask does not identify separate panels)
+- Official Tesla examples download as-is for full Cybertruck coverage; partial coverage clips the original artwork
+- Transparent custom artwork is composited over the selected film color
+- Artwork scale and position update the 3D preview and export
+- Export refuses files that remain above 1 MB after color reduction
 
 Upload path: Tesla app → Creations → Wrap → Upload (app 4.59+), or USB `Wraps/` folder → Toybox → Paint Shop → Wraps.
 
 ## Notes
 
-- 3D assets and film lookbook images were recovered from the Grok build for continuity.
+- 3D assets, Model 3 texture maps, and film lookbook images were recovered from the Grok build for continuity.
 - Cybertruck body paint uses a custom wrap shader with coverage bands (full / two-tone / lower / roof).
+- The 3D preview uses approximate projected textures, not Tesla template UVs. Pattern placement and partial-coverage edges may differ on the vehicle; inspect the exported template before uploading. Official examples use representative patterns in 3D.
 - Designs are previews. Follow Tesla’s official wrap requirements before production.
+
+## Verification
+
+```bash
+npm run lint
+npm run build
+npx playwright install chromium
+npm test
+```
+
+For an installed Chromium browser, use `CHROMIUM_PATH=/path/to/chromium npm test`.
+The browser suite covers desktop/mobile vehicle switching, artwork validation and
+fit controls, film selection after upload, PNG download dimensions/size, transparent
+artwork composition, official-art clipping, and Model 3 factory-white export.

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CATEGORIES, COVERAGES, FINISHES, FILMS, VEHICLES, getFilm } from './films'
-import { buildWrapFile, shareOrDownload, wrapFileName } from './paintshop'
+import { buildWrapFile, loadImage, MAX_BYTES, shareOrDownload, wrapFileName } from './paintshop'
 import { useStudio } from './store'
 import VehicleScene from './vehicle/VehicleScene'
 
@@ -46,7 +46,7 @@ function FilmsList() {
               className={wrapId === film.id ? 'film active' : 'film'}
               onClick={() => {
                 setWrapId(film.id)
-                setFinish(film.lockFinish || film.finish === 'shift' ? film.finish : film.finish)
+                setFinish(film.finish)
               }}
             >
               <span className="swatch" style={thumb ? undefined : { background: film.color }}>
@@ -65,6 +65,7 @@ function FilmsList() {
 }
 
 function TunePanel() {
+  const vehicle = useStudio((s) => s.vehicle)
   const film = getFilm(useStudio((s) => s.wrapId))
   const finish = useStudio((s) => s.finish)
   const coverage = useStudio((s) => s.coverage)
@@ -98,12 +99,14 @@ function TunePanel() {
       <div className="field">
         <div className="field-head">
           <span>Coverage</span>
+          {vehicle === 'model3' ? <span className="hint">Full coverage for Model 3</span> : null}
         </div>
         <div className="chip-row">
           {COVERAGES.map((c) => (
             <button
               key={c.id}
               type="button"
+              disabled={vehicle === 'model3' && c.id !== 'full'}
               className={coverage === c.id ? 'chip active' : 'chip'}
               onClick={() => setCoverage(c.id)}
               title={c.hint}
@@ -123,6 +126,8 @@ function TunePanel() {
 }
 
 function YoursPanel() {
+  const [uploading, setUploading] = useState(false)
+  const setToast = useStudio((s) => s.setToast)
   const customSrc = useStudio((s) => s.customSrc)
   const customFit = useStudio((s) => s.customFit)
   const setCustomSrc = useStudio((s) => s.setCustomSrc)
@@ -131,20 +136,37 @@ function YoursPanel() {
 
   return (
     <div className="yours">
-      <p className="blurb">Drop your own art. It maps onto the body in the 3D preview and into the Paint Shop PNG.</p>
+      <p className="blurb">Upload your own art. It maps onto the body in the 3D preview and into the Paint Shop PNG.</p>
       <label className="upload-zone">
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
           hidden
-          onChange={(e) => {
+          disabled={uploading}
+          aria-label="Upload artwork"
+          onChange={async (e) => {
             const file = e.target.files?.[0]
+            e.target.value = ''
             if (!file) return
-            setCustomSrc(URL.createObjectURL(file))
+            if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20e6) {
+              setToast('Choose a PNG, JPG, or WebP under 20 MB.')
+              return
+            }
+            setUploading(true)
+            const src = URL.createObjectURL(file)
+            try {
+              await loadImage(src)
+              setCustomSrc(src)
+            } catch {
+              URL.revokeObjectURL(src)
+              setToast('This image could not be opened. Try another file.')
+            } finally {
+              setUploading(false)
+            }
           }}
         />
-        <strong>{customSrc ? 'Replace artwork' : 'Upload artwork'}</strong>
-        <small>PNG, JPG, or WebP</small>
+        <strong>{uploading ? 'Opening artwork…' : customSrc ? 'Replace artwork' : 'Upload artwork'}</strong>
+        <small>PNG, JPG, or WebP · up to 20 MB</small>
       </label>
       {customSrc ? (
         <div className="fit-controls">
@@ -204,7 +226,7 @@ function SendButton({ block }) {
   useEffect(() => {
     let dead = false
     setReady(false)
-    if (vehicle === 'cybertruck' && film.official && !customSrc) {
+    if (vehicle === 'cybertruck' && film.official && !customSrc && coverage === 'full') {
       setReady(true)
       return undefined
     }
@@ -226,16 +248,20 @@ function SendButton({ block }) {
   async function onSend() {
     setBusy(true)
     try {
-      const official = vehicle === 'cybertruck' && film.official && !customSrc
+      const official = vehicle === 'cybertruck' && film.official && !customSrc && coverage === 'full'
       const blob = official
-        ? await fetch(film.official).then((r) => r.blob())
+        ? await fetch(film.official).then((r) => {
+            if (!r.ok) throw new Error('The official wrap could not be downloaded.')
+            return r.blob()
+          })
         : await buildWrapFile(film, coverage, customSrc, customFit, vehicle)
+      if (blob.size > MAX_BYTES) throw new Error('This wrap exceeds the 1 MB upload limit.')
       const name = official ? film.official.split('/').pop() : wrapFileName(customSrc ? 'Custom' : film.name, vehicle)
       const result = await shareOrDownload(blob, name, `${vehicleMeta.name} ${vehicleMeta.trim}`)
-      setUpload({ name, bytes: blob.size, url: URL.createObjectURL(blob) })
+      setUpload({ name, vehicle, bytes: blob.size, url: URL.createObjectURL(blob) })
       if (result === 'saved') setToast('Wrap file saved')
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) setToast('Save failed. Try again.')
+      if (!(err instanceof DOMException && err.name === 'AbortError')) setToast(err.message || 'Save failed. Try again.')
     } finally {
       setBusy(false)
     }
@@ -250,9 +276,9 @@ function SendButton({ block }) {
 
 function UploadModal() {
   const upload = useStudio((s) => s.upload)
-  const vehicle = useStudio((s) => s.vehicle)
   const clearUpload = useStudio((s) => s.clearUpload)
   if (!upload) return null
+  const vehicle = upload.vehicle
   const kb = Math.max(1, Math.round(upload.bytes / 1024))
   const vehicleMeta = VEHICLES.find((v) => v.id === vehicle)
   return (
@@ -295,7 +321,7 @@ function Toast() {
     return () => window.clearTimeout(id)
   }, [toast, setToast])
   if (!toast) return null
-  return <div className="toast">{toast}</div>
+  return <div className="toast" role="status">{toast}</div>
 }
 
 export default function App() {
@@ -306,7 +332,8 @@ export default function App() {
   const wrapId = useStudio((s) => s.wrapId)
   const film = getFilm(wrapId)
   const vehicleMeta = VEHICLES.find((v) => v.id === vehicle)
-  const title = vehicle === 'model3' && film.id === 'stainless' ? 'Factory White' : film.name
+  const customSrc = useStudio((s) => s.customSrc)
+  const title = customSrc ? 'Custom artwork' : vehicle === 'model3' && film.id === 'stainless' ? 'Factory White' : film.name
 
   return (
     <div className="cabin">

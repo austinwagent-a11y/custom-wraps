@@ -2,13 +2,18 @@ import * as THREE from 'three'
 import { addMesh, createPaintMaterial, recenterGroup } from './materials'
 
 function classifyTriangle(px, py, pz, nx, ny, nz) {
+  // The source GLB merges tires, glazing and body into one steel material.
+  // Classify in normalized vehicle coordinates, including back-facing glass.
+  const wheelDistance = Math.min(Math.hypot(pz + 2.02, py - 0.49), Math.hypot(pz - 1.7, py - 0.49))
+  if (Math.abs(px) > 0.66 && wheelDistance < 0.5) return 'trim'
+  if (py < 0.4 || (Math.abs(px) > 0.85 && wheelDistance < 0.62)) return 'trim'
   const glass =
-    (ny > 0.2 && nz < -0.45 && py > 1.2 && py < 1.72 && pz < -0.35 && pz > -1.65 && Math.abs(px) < 0.88) ||
-    (Math.abs(nx) > 0.45 && Math.abs(ny) < 0.55 && py > 1.28 && py < 1.58 && pz > -0.9 && pz < 1.15 && Math.abs(px) > 0.72) ||
-    (nz > 0.6 && py > 1.28 && py < 1.62 && pz > 0.55 && pz < 1.15 && Math.abs(px) < 0.72)
+    (Math.abs(ny) > 0.75 && Math.abs(nz) > 0.2 && py > 1.38 && pz < -0.45 && pz > -1.55 && Math.abs(px) < 0.65) ||
+    (Math.abs(nx) > 0.85 && Math.abs(ny) < 0.4 && py > 1.34 && py < 1.73 && pz > -0.95 && pz < 0.7 && Math.abs(px) > 0.6) ||
+    (Math.abs(nz) > 0.6 && py > 1.28 && py < 1.62 && pz > 0.55 && pz < 1.15 && Math.abs(px) < 0.72)
   if (glass) return 'glass'
-  if (py > 1.12 && py < 1.22 && pz < -2.45 && Math.abs(px) < 0.85 && nz < -0.3) return 'head'
-  if (py > 1.12 && py < 1.32 && pz > 2.45 && Math.abs(px) < 0.9 && nz > 0.4) return 'tail'
+  if (py > 1.12 && py < 1.22 && pz < -2.45 && Math.abs(px) < 0.85 && nz < -0.85) return 'head'
+  if (py > 1.12 && py < 1.32 && pz > 2.45 && Math.abs(px) < 0.9 && nz > 0.85) return 'tail'
   return 'paint'
 }
 
@@ -70,10 +75,14 @@ function splitGeometry(group, geometry, paintMat) {
 
     let mat = mats.get(key)
     if (!mat) {
-      mat = new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide })
-      if (key === 'glass') {
+      mat = new THREE.MeshPhysicalMaterial({ side: THREE.FrontSide })
+      if (key === 'trim') {
+        mat.color.set('#16181a')
+        mat.roughness = 0.85
+        mat.metalness = 0.08
+      } else if (key === 'glass') {
         mat.transparent = true
-        mat.opacity = 0.38
+        mat.opacity = 0.82
         mat.roughness = 0.05
         mat.metalness = 0.06
         mat.color.set('#1a3040')
@@ -120,6 +129,8 @@ export function prepareCybertruck(scene) {
 
   const group = new THREE.Group()
   const paint = createPaintMaterial()
+  // The GLB includes opposing faces; rendering both sides causes z-fighting.
+  paint.side = THREE.FrontSide
 
   root.traverse((obj) => {
     if (!obj.isMesh || skip.has(obj)) return

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { paintPattern } from '../paintshop'
 
 const whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1)
 whiteTex.colorSpace = THREE.SRGBColorSpace
@@ -22,80 +23,11 @@ export function finishProps(finish, bareStainless) {
 export function makePatternTexture(film) {
   if (!film.pattern && film.finish !== 'shift') return null
   const canvas = document.createElement('canvas')
-  canvas.width = 512
-  canvas.height = 512
+  canvas.width = 1024
+  canvas.height = 768
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
-  ctx.fillStyle = film.color
-  ctx.fillRect(0, 0, 512, 512)
-  const pattern = film.finish === 'shift' ? 'shift' : film.pattern
-
-  if (pattern === 'camo') {
-    const tones = ['#1a1c16', '#8a8474', '#3e4634', '#c4bfb0']
-    for (let i = 0; i < 28; i++) {
-      ctx.fillStyle = tones[i % tones.length]
-      ctx.beginPath()
-      ctx.ellipse((i * 97) % 512, (i * 61) % 512, 70 + (i % 4) * 24, 40, i, 0, Math.PI * 2)
-      ctx.fill()
-    }
-  } else if (pattern === 'stars' || pattern === 'nebula') {
-    ctx.fillStyle = pattern === 'nebula' ? '#10161e' : '#0c1016'
-    ctx.fillRect(0, 0, 512, 512)
-    ctx.fillStyle = '#e8eef4'
-    for (let i = 0; i < 180; i++) ctx.fillRect((i * 97) % 512, (i * 53) % 512, i % 11 === 0 ? 2 : 1, 1)
-  } else if (pattern === 'carbon') {
-    ctx.fillStyle = '#141416'
-    ctx.fillRect(0, 0, 512, 512)
-    ctx.strokeStyle = '#2a2a30'
-    for (let i = 0; i < 512; i += 8) {
-      ctx.beginPath()
-      ctx.moveTo(0, i)
-      ctx.lineTo(512, i + 4)
-      ctx.stroke()
-    }
-  } else if (pattern === 'hearts' || pattern === 'blossom') {
-    ctx.fillStyle = '#fff7f8'
-    const count = pattern === 'hearts' ? 28 : 80
-    for (let i = 0; i < count; i++) {
-      const x = (i * 89) % 512
-      const y = (i * 53) % 512
-      if (pattern === 'blossom') {
-        ctx.beginPath()
-        ctx.arc(x, y, 4, 0, Math.PI * 2)
-        ctx.fill()
-        continue
-      }
-      ctx.beginPath()
-      ctx.moveTo(x, y + 5.6)
-      ctx.bezierCurveTo(x - 16, y - 4, x - 7.2, y - 15.2, x, y - 4.48)
-      ctx.bezierCurveTo(x + 7.2, y - 15.2, x + 16, y - 4, x, y + 5.6)
-      ctx.fill()
-    }
-  } else if (pattern === 'slash' || pattern === 'livery') {
-    ctx.fillStyle = '#141416'
-    ctx.fillRect(0, 0, 512, 512)
-    ctx.fillStyle = '#c1121f'
-    ctx.save()
-    ctx.translate(256, 256)
-    ctx.rotate(-0.6)
-    ctx.fillRect(-512, -18, 1024, 36)
-    ctx.restore()
-  } else if (pattern === 'topo') {
-    ctx.strokeStyle = '#c4b08a'
-    ctx.lineWidth = 2
-    for (let r = 24; r < 240; r += 22) {
-      ctx.beginPath()
-      ctx.ellipse(256, 256, r * 1.3, r, 0.2, 0, Math.PI * 2)
-      ctx.stroke()
-    }
-  } else if (pattern === 'shift') {
-    const g = ctx.createLinearGradient(0, 0, 512, 0)
-    g.addColorStop(0, '#0e3d3a')
-    g.addColorStop(0.45, '#14324a')
-    g.addColorStop(1, '#3a1860')
-    ctx.fillStyle = g
-    ctx.fillRect(0, 0, 512, 512)
-  }
+  paintPattern(ctx, film.finish === 'shift' ? 'shift' : film.pattern, film.color)
 
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -167,7 +99,7 @@ uniform float uRoof;`,
           mask = 1.0 - smoothstep(uLower - 0.06, uLower + 0.1, vWrapPos.y);
         } else if (uCov > 0.5) {
           float roof = smoothstep(uRoof - 0.08, uRoof + 0.06, vWrapPos.y);
-          float hood = smoothstep(0.15, -0.85, vWrapPos.z) * smoothstep(uLower, uLower + 0.35, vWrapPos.y);
+          float hood = (1.0 - smoothstep(-0.85, 0.15, vWrapPos.z)) * smoothstep(uLower, uLower + 0.35, vWrapPos.y);
           mask = max(roof, hood);
         }
         diffuseColor.rgb = mix(uBase, diffuseColor.rgb, mask);`,
