@@ -206,7 +206,7 @@ export default function VehicleScene() {
       className="viewport"
       dpr={[1, 1.5]}
       camera={{ fov: 28, near: 0.1, far: 80, position: [4.2, 1.5, -6.6] }}
-      gl={{ antialias: true, toneMappingExposure: 1.05, powerPreference: 'high-performance' }}
+      gl={{ antialias: true, toneMappingExposure: 1.05, powerPreference: 'high-performance', preserveDrawingBuffer: true }}
     >
       <SceneBody />
     </Canvas>
