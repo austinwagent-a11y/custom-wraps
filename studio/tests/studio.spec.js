@@ -39,15 +39,24 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
       name: 'art.png', mimeType: 'image/png', buffer: Buffer.from(data, 'base64'),
     })
     await expect(page.locator('.selected .title')).toHaveText('Custom artwork')
-    // Wait for both GLBs and their textures to render before comparing fit edits.
-    await page.waitForTimeout(3000)
-    const stage = page.locator('.stage')
-    const before = await stage.screenshot()
-    await page.getByRole('slider').first().fill('0.5')
-    await page.getByRole('slider').nth(1).fill('200')
-    await page.waitForTimeout(700)
-    const after = await stage.screenshot()
-    expect(before.equals(after)).toBe(false)
+    const canvas = page.locator('.stage canvas')
+    await expect(canvas).toBeVisible()
+    const frame = () => canvas.evaluate((node) => node.toDataURL())
+    let settled = await frame()
+    await expect.poll(async () => {
+      const next = await frame()
+      const same = next === settled
+      settled = next
+      return same
+    }, { timeout: 15000 }).toBe(true)
+    const before = settled
+    const scale = page.getByRole('slider').first()
+    const offsetX = page.getByRole('slider').nth(1)
+    await scale.fill('0.5')
+    await offsetX.fill('200')
+    await expect(scale).toHaveValue('0.5')
+    await expect(offsetX).toHaveValue('200')
+    await expect.poll(async () => (await frame()) === before, { timeout: 8000 }).toBe(false)
     const downloadPromise = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Send to truck' }).click()
     const download = await downloadPromise
